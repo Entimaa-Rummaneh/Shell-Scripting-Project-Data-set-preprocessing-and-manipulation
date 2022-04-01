@@ -1,0 +1,165 @@
+echo "Min" > stats.txt
+echo "Max" >> stats.txt
+echo "Mean" >> stats.txt
+echo "STDEV" >> stats.txt
+
+dimension()
+{
+  #number of rows = number of lines - 1 
+  allrows=$(cat $filename | wc -l)
+  rowno=$((allrows-1))
+  columno=$(awk -F',' '{print NF}' $filename | uniq)
+  echo "The dimension is $rowno x $columno"
+}
+
+stat()
+{
+ allrows=$(cat $filename | wc -l)
+ r=$((allrows-1))
+ columno=$(awk -F',' '{print NF}' $filename | uniq)
+ i=1
+ while [ "$i" -le "$columno" ] #loop on columns
+ do 
+   #take one column without the first line in it and sort it
+   cut -d',' -f$i $filename | tail -$r | sort -n > temp.txt
+   #ignore empty value and decrease rows number
+   firstline=$(head -1 temp.txt)
+   while [ "$firstline" = " " -o "$firstline" = "" ]
+   do
+     r=$((r - 1))
+     cat temp.txt | tail -$r > newtemp.txt
+     cp newtemp.txt temp.txt
+     firstline=$(head -1 temp.txt)
+   done
+   #first line is the minimum value
+   min=$(head -1 temp.txt)
+   echo $min > column$i.txt
+   #last line is the maximum value
+   max=$(tail -1 temp.txt)
+   echo $max >> column$i.txt
+   #calculate mean
+   k=1
+   sum=0
+   cat temp.txt | tr '\12' ',' > tmp2.txt
+   while [ "$k" -le "$r" ]
+   do
+     num=$(cat tmp2.txt | cut -d',' -f$k)      
+     sum="$( bc <<<"$sum + $num" )"
+     k=$((k + 1))
+   done
+   mean="$( bc <<<"scale=2; $sum / $r" )"
+   echo $mean >> column$i.txt
+
+   #calculate STDEV
+   m=1
+   sumDEV=0
+   while [ "$m" -le "$r" ]
+   do
+     numDEV=$(cat tmp2.txt | cut -d',' -f$m)
+     diff="$( bc <<<"$numDEV - $mean" )"
+     diff2="$( bc <<<"scale=10; $diff^2" )"
+     sumDEV="$( bc <<<"$sumDEV + $diff2" )"
+     m=$((m + 1))
+   done
+   sd="$( bc <<<"scale=10; $sumDEV / $r" )"
+   STDEV=$(echo "sqrt($sd)" | bc)
+   echo $STDEV >> column$i.txt
+   #recalculate number of rows 
+   allrows=$(cat $filename | wc -l)
+   r=$((allrows-1))
+   i=$((i + 1))
+ done
+
+#disdlay result
+#results of each column saved in separete file
+#combine all results in one file
+ cp stats.txt result.txt
+ j=1
+ while [ "$j" -le "$columno" ]
+ do
+   paste result.txt column$j.txt > finalresult.txt
+   cp finalresult.txt result.txt
+   j=$((j + 1))
+ done
+ cat result.txt
+}
+
+substitute()
+{
+ allrows=$(cat $filename | wc -l)
+ r=$((allrows-1))
+ columno=$(awk -F',' '{print NF}' $filename | uniq)
+ i=1
+ while [ "$i" -le "$columno" ]
+ do
+   cut -d',' -f$i $filename | tail -$r | sort -n > temp.txt
+   #calculate mean of the column to subsitute it
+   k=1
+   sum=0
+   flag=0
+   cat temp.txt | tr '\12' ',' > tmp2.txt
+   while [ "$k" -le "$r" ]
+   do
+     num=$(cat tmp2.txt | cut -d',' -f$k)
+     if [ "$num" = " " -o "$num" = "" ]
+     then
+       flag=$((flag + 1))
+     else
+       sum="$( bc <<<"$sum + $num" )"
+     fi
+     k=$((k + 1))
+   done
+   r=$((r - flag))
+   meanSUB="$( bc <<<"scale=2; $sum / $r" )"
+   #check if any value is empty and subsitute mean
+   j=1
+   while [ "$j" -le "$r" ]
+   do
+     num2=$(cat tmp2.txt | cut -d',' -f$j)
+     if [ "$num2" = " " ]
+     then 
+        sed 's/ /'$meanSUB'/' $filename > temptest.txt
+        cp temptest.txt $filename
+     fi
+   j=$((j + 1))
+   done
+   i=$((i + 1))
+ done
+ cat $filename
+}
+
+echo "Enter file name: "
+read filename
+if ! [[ -f "$filename" ]];then #detecting file is avaliable or not
+ echo "No such file"
+ exit 2
+fi
+
+if ! [[ "${filename: -4}" == ".csv" ]];then #cheaking format of the file
+ echo "file extension error"
+ exit 2
+fi
+
+#display file contant
+sed -e "s/\r//g" $filename > tempfile.csv
+cp tempfile.csv $filename
+cat $filename
+#display menu
+while true
+do
+ printf "\nD: for dimension
+C: for statistics
+S: for substitutes missing values
+E: exit\n"
+ read operation
+ case $operation in
+   "D") dimension;;
+   "C") stat;;
+   "S") substitute;;
+   "E") exit 0;;
+   *) echo "Enter a valid chiose"
+ esac
+done
+
+
+
